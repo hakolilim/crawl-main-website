@@ -182,6 +182,7 @@ async def download_selected(
 
 
 def build_ui():
+    # Cải tiến CSS: Tách biệt màu nền panel cho Light Mode và Dark Mode để không bị lỗi tàng hình chữ
     css = """
     .gradio-container, .app-shell, .panel, .hero, .hero * {
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, Arial, sans-serif;
@@ -202,7 +203,12 @@ def build_ui():
     }
     .hero img {width:96px; height:96px; object-fit:contain; background:white; border-radius:20px; padding:10px; margin:0 auto;}
     .hero-copy {max-width: 760px; margin: 0 auto;}
-    .panel {background:#ffffff; border:1px solid #e5e7eb; border-radius:16px; padding:16px; box-shadow:0 8px 30px rgba(0,0,0,.05);}
+    
+    /* Panel thích ứng theo chế độ sáng/tối của Gradio */
+    .panel { border:1px solid #e5e7eb; border-radius:16px; padding:16px; box-shadow:0 8px 30px rgba(0,0,0,.05); }
+    :root:not(.dark) .panel { background: #ffffff; color: #1f2937; }
+    :root.dark .panel { background: #1f2937; color: #f9fafb; border-color: #374151; }
+    
     .muted {color:#6b7280;}
     footer {display:none !important;}
     """
@@ -213,6 +219,17 @@ def build_ui():
     <link rel="icon" type="image/x-icon" href="/public/favicon.ico?v=2">
     <link rel="shortcut icon" href="/public/favicon.ico?v=2">
     <link rel="apple-touch-icon" href="/public/favicon.ico?v=2">
+    """
+
+    # Đoạn Script ép giao diện Dark Mode (Bạn có thể đổi 'dark' thành 'light' nếu thích giao diện sáng)
+    force_theme_js = """
+    function() {
+        const url = new URL(window.location);
+        if (url.searchParams.get('__theme') !== 'dark') {
+            url.searchParams.set('__theme', 'dark');
+            window.location.href = url.href;
+        }
+    }
     """
 
     with gr.Blocks(title=APP_TITLE, css=css, theme=gr.themes.Soft(), head=head) as demo:
@@ -256,6 +273,9 @@ def build_ui():
                 download_btn = gr.Button("Tải truyện", variant="primary")
                 output_files = gr.Files(label="File đã tạo")
                 logs = gr.Textbox(label="Nhật ký", lines=18, interactive=False)
+
+        # Đăng ký sự kiện trigger ép theme ngay khi UI vừa load xong
+        demo.load(None, None, None, js=force_theme_js)
 
         login_btn.click(do_login, inputs=[session_id, username, password], outputs=[login_status, logs])
         fetch_btn.click(fetch_novel, inputs=[session_id, novel_url], outputs=[summary, volumes, logs])

@@ -182,14 +182,14 @@ async def download_selected(
 
 
 def build_ui():
-    # CSS mới: Loại bỏ background màu trắng chết cố định.
-    # Sử dụng các biến CSS mặc định của Gradio (--block-background-fill, --body-text-color) 
-    # để panel tự động đổi màu mượt mà theo đúng Dark/Light mode hệ thống.
+    # CSS cải tiến: Phân tách rõ ràng giao diện cho Khối logo (.hero)
     css = """
     .gradio-container, .app-shell, .panel, .hero, .hero * {
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, Arial, sans-serif;
     }
     .app-shell {max-width: 1180px; margin: 0 auto;}
+    
+    /* Cấu hình chung cho khung logo */
     .hero {
         display:flex;
         flex-direction:column;
@@ -197,16 +197,31 @@ def build_ui():
         justify-content:center;
         text-align:center;
         gap:18px;
-        background:linear-gradient(135deg,#111827,#1f2937);
-        color:white;
         padding:28px 20px;
         border-radius:20px;
         margin-bottom:18px;
     }
     .hero img {width:96px; height:96px; object-fit:contain; background:white; border-radius:20px; padding:10px; margin:0 auto;}
     .hero-copy {max-width: 760px; margin: 0 auto;}
+
+    /* MÀU SẮC THEO THEME CHO KHUNG LOGO (.hero) */
+    /* 1. Khi ở giao diện SÁNG (Light Mode): Nền trắng/xám nhẹ, chữ tối, có viền mảnh */
+    :root:not(.dark) .hero {
+        background: var(--block-background-fill);
+        color: var(--body-text-color);
+        border: 1px solid var(--border-color-primary);
+        box-shadow: 0 4px 20px rgba(0,0,0,.02);
+    }
     
-    /* Sửa lỗi hiển thị panel thông tin truyện */
+    /* 2. Khi ở giao diện TỐI (Dark Mode): Giữ nguyên màu Gradient tối cũ của bạn */
+    :root.dark .hero {
+        background: linear-gradient(135deg,#111827,#1f2937);
+        color: white;
+        border: none;
+        box-shadow: none;
+    }
+    
+    /* Cấu hình chung cho panel thông tin truyện */
     .panel {
         background-color: var(--block-background-fill); 
         color: var(--body-text-color);
@@ -227,8 +242,6 @@ def build_ui():
     <link rel="shortcut icon" href="/public/favicon.ico?v=2">
     <link rel="apple-touch-icon" href="/public/favicon.ico?v=2">
     """
-
-    # ĐÃ XOÁ hoàn toàn đoạn biến force_theme_js ở đây
 
     with gr.Blocks(title=APP_TITLE, css=css, theme=gr.themes.Soft(), head=head) as demo:
         session_id = gr.State(str(uuid.uuid4()))
@@ -271,8 +284,6 @@ def build_ui():
                 download_btn = gr.Button("Tải truyện", variant="primary")
                 output_files = gr.Files(label="File đã tạo")
                 logs = gr.Textbox(label="Nhật ký", lines=18, interactive=False)
-
-        # ĐÃ XOÁ dòng demo.load gọi JavaScript ép giao diện tại đây
 
         login_btn.click(do_login, inputs=[session_id, username, password], outputs=[login_status, logs])
         fetch_btn.click(fetch_novel, inputs=[session_id, novel_url], outputs=[summary, volumes, logs])

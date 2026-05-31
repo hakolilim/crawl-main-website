@@ -1,9 +1,12 @@
 import asyncio
+import os
+import shutil
 import uuid
 from pathlib import Path
 from typing import Dict, List
 
 import gradio as gr
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +20,11 @@ from hako_service import (
     download_volumes,
     reset_output_dir,
 )
+
+load_dotenv()
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 
 APP_TITLE = "Hako Downloader"
 BASE_DIR = Path(__file__).resolve().parent
@@ -301,5 +309,125 @@ async def health():
     return {"status": "ok", "max_concurrent_jobs": MAX_CONCURRENT_JOBS}
 
 
+def get_server_stats():
+    total, used, free = shutil.disk_usage(DOWNLOAD_DIR)
+    
+    active_sessions = len(session_store)
+    
+    downloaded_files_count = 0
+    downloaded_size = 0
+    for root, dirs, files in os.walk(DOWNLOAD_DIR):
+        for f in files:
+            fp = os.path.join(root, f)
+            if not os.path.islink(fp):
+                downloaded_files_count += 1
+                downloaded_size += os.path.getsize(fp)
+                
+    return f"""
+### Tình trạng máy chủ
+- **Phiên hoạt động (Active Sessions):** {active_sessions}
+- **Số lượng file đã tải:** {downloaded_files_count}
+- **Dung lượng file tải về:** {downloaded_size // (1024*1024)} MB
+- **Ổ cứng sử dụng:** {used // (1024*1024*1024)} GB / {total // (1024*1024*1024)} GB
+"""
+
+def list_hako_accounts():
+    accounts = []
+    for sid, data in session_store.items():
+        state = data.get("state")
+        label = state.user_label if state else "Chưa đăng nhập"
+        status = data.get("status", "")
+        accounts.append([sid, label, status])
+    return accounts
+
+async def delete_hako_account(sid: str):
+    if not sid:
+        return list_hako_accounts(), "Vui lòng nhập Session ID cần xoá."
+    sid = sid.strip()
+    if sid in session_store:
+        session = session_store[sid]
+        state = session.get("state")
+        if state:
+            manager = HakoSessionManager(state)
+            await manager.close()
+        del session_store[sid]
+        return list_hako_accounts(), f"Đã xoá tài khoản (Session ID: {sid})"
+    return list_hako_accounts(), "Không tìm thấy Session ID."
+
+def list_downloaded_novels():
+    items = []
+    for user_dir in DOWNLOAD_DIR.iterdir():
+        if user_dir.is_dir():
+            for novel_dir in user_dir.iterdir():
+                if novel_dir.is_dir():
+                    size = sum(f.stat().st_size for f in novel_dir.rglob('*') if f.is_file())
+                    items.append([novel_dir.name, f"{size // 1024} KB", f"/downloads/{user_dir.name}/{novel_dir.name}"])
+                elif novel_dir.is_file():
+                    items.append([novel_dir.name, f"{novel_dir.stat().st_size // 1024} KB", f"/downloads/{user_dir.name}/{novel_dir.name}"])
+    return items
+
+def delete_all_novels():
+    try:
+        for item in DOWNLOAD_DIR.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+        DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        return list_downloaded_novels(), get_server_stats(), "Đã xoá toàn bộ truyện."
+    except Exception as e:
+        return list_downloaded_novels(), get_server_stats(), f"Lỗi: {e}"
+
+def build_admin_ui():
+    with gr.Blocks(title="Admin Dashboard", theme=gr.themes.Soft()) as admin_demo:
+        gr.Markdown("# Bảng điều khiển quản trị (Admin Dashboard)")
+        
+        with gr.Row():
+            with gr.Column():
+                stats_md = gr.Markdown(get_server_stats())
+                refresh_btn = gr.Button("Làm mới trạng thái")
+                
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("## Quản lý tài khoản Hako đã đăng nhập")
+                accounts_df = gr.Dataframe(
+                    headers=["Session ID", "User Label", "Trạng thái"],
+                    value=list_hako_accounts(),
+                    interactive=False
+                )
+                session_id_input = gr.Textbox(label="Session ID cần xoá")
+                delete_acc_btn = gr.Button("Xoá tài khoản", variant="stop")
+                acc_msg = gr.Textbox(label="Thông báo", interactive=False)
+                
+            with gr.Column():
+                gr.Markdown("## Quản lý truyện đã tải")
+                novels_df = gr.Dataframe(
+                    headers=["Tên file/thư mục", "Dung lượng", "Đường dẫn (URL)"],
+                    value=list_downloaded_novels(),
+                    interactive=False
+                )
+                gr.Markdown("*Ghi chú: Để tải về truyện, hãy copy `Đường dẫn (URL)` và dán vào thanh địa chỉ trình duyệt.*")
+                delete_all_btn = gr.Button("Xoá TẤT CẢ truyện", variant="stop")
+                novel_msg = gr.Textbox(label="Thông báo", interactive=False)
+                
+        refresh_btn.click(get_server_stats, outputs=[stats_md])
+        refresh_btn.click(list_hako_accounts, outputs=[accounts_df])
+        refresh_btn.click(list_downloaded_novels, outputs=[novels_df])
+        
+        delete_acc_btn.click(delete_hako_account, inputs=[session_id_input], outputs=[accounts_df, acc_msg])
+        delete_acc_btn.click(get_server_stats, outputs=[stats_md])
+        
+        delete_all_btn.click(delete_all_novels, outputs=[novels_df, stats_md, novel_msg])
+        
+    return admin_demo
+
 demo = build_ui()
+admin_demo = build_admin_ui()
+
 app = gr.mount_gradio_app(app, demo, path="/")
+app = gr.mount_gradio_app(
+    app, 
+    admin_demo, 
+    path="/admin", 
+    auth=(ADMIN_USERNAME, ADMIN_PASSWORD)
+)

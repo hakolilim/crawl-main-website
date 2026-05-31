@@ -484,11 +484,19 @@ def build_admin_ui():
                     delete_all_btn = gr.Button("Xoá TẤT CẢ truyện", variant="stop")
                 novel_msg = gr.Textbox(label="Thông báo", interactive=False)
 
-        refresh_btn.click(get_server_stats, outputs=[stats_md])
-        refresh_btn.click(list_hako_accounts, outputs=[accounts_df])
-        refresh_btn.click(list_account_choices, outputs=[account_select])
-        refresh_btn.click(list_downloaded_novels, outputs=[novels_df])
-        refresh_btn.click(list_file_choices, outputs=[file_select])
+        def refresh_all():
+            return (
+                get_server_stats(),
+                list_hako_accounts(),
+                gr.update(choices=list_account_choices(), value=[]),
+                list_downloaded_novels(),
+                gr.update(choices=list_file_choices(), value=[]),
+            )
+
+        refresh_btn.click(
+            refresh_all,
+            outputs=[stats_md, accounts_df, account_select, novels_df, file_select]
+        )
 
         delete_selected_acc_btn.click(
             delete_selected_accounts, inputs=[account_select],
@@ -510,6 +518,11 @@ def build_admin_ui():
         delete_all_btn.click(
             delete_all_novels,
             outputs=[novels_df, file_select, stats_md, novel_msg]
+        )
+
+        admin_demo.load(
+            refresh_all,
+            outputs=[stats_md, accounts_df, account_select, novels_df, file_select]
         )
 
     return admin_demo

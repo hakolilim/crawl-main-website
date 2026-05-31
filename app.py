@@ -360,10 +360,17 @@ def list_downloaded_novels():
         if user_dir.is_dir():
             for novel_dir in user_dir.iterdir():
                 if novel_dir.is_dir():
-                    size = sum(f.stat().st_size for f in novel_dir.rglob('*') if f.is_file())
-                    items.append([novel_dir.name, f"{size // 1024} KB", f"/downloads/{user_dir.name}/{novel_dir.name}"])
+                    for file_path in novel_dir.rglob('*'):
+                        if file_path.is_file():
+                            rel_path = file_path.relative_to(DOWNLOAD_DIR).as_posix()
+                            size_kb = file_path.stat().st_size // 1024
+                            link = f'<a href="/downloads/{rel_path}" target="_blank" download>Tải file</a>'
+                            items.append([f"{novel_dir.name}/{file_path.name}", f"{size_kb} KB", link])
                 elif novel_dir.is_file():
-                    items.append([novel_dir.name, f"{novel_dir.stat().st_size // 1024} KB", f"/downloads/{user_dir.name}/{novel_dir.name}"])
+                    rel_path = novel_dir.relative_to(DOWNLOAD_DIR).as_posix()
+                    size_kb = novel_dir.stat().st_size // 1024
+                    link = f'<a href="/downloads/{rel_path}" target="_blank" download>Tải file</a>'
+                    items.append([novel_dir.name, f"{size_kb} KB", link])
     return items
 
 def delete_all_novels():
@@ -402,11 +409,12 @@ def build_admin_ui():
             with gr.Column():
                 gr.Markdown("## Quản lý truyện đã tải")
                 novels_df = gr.Dataframe(
-                    headers=["Tên file/thư mục", "Dung lượng", "Đường dẫn (URL)"],
+                    headers=["Tên file", "Dung lượng", "Liên kết tải"],
+                    datatype=["str", "str", "html"],
                     value=list_downloaded_novels(),
                     interactive=False
                 )
-                gr.Markdown("*Ghi chú: Để tải về truyện, hãy copy `Đường dẫn (URL)` và dán vào thanh địa chỉ trình duyệt.*")
+                gr.Markdown("*Ghi chú: Nhấn vào chữ `Tải file` để tải trực tiếp từ trình duyệt.*")
                 delete_all_btn = gr.Button("Xoá TẤT CẢ truyện", variant="stop")
                 novel_msg = gr.Textbox(label="Thông báo", interactive=False)
                 
@@ -424,10 +432,14 @@ def build_admin_ui():
 demo = build_ui()
 admin_demo = build_admin_ui()
 
-app = gr.mount_gradio_app(app, demo, path="/")
+# Use Gradio's standard multi-app mounting logic correctly
+# Mount /admin first, then / to avoid routing conflicts
+# FastAPI reads routes in order.
+# We mount the Gradio apps correctly ensuring /admin/ gets routed.
 app = gr.mount_gradio_app(
     app, 
     admin_demo, 
     path="/admin", 
     auth=(ADMIN_USERNAME, ADMIN_PASSWORD)
 )
+app = gr.mount_gradio_app(app, demo, path="/")

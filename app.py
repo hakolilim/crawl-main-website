@@ -340,19 +340,42 @@ def list_hako_accounts():
         accounts.append([sid, label, status])
     return accounts
 
-async def delete_hako_account(sid: str):
-    if not sid:
-        return list_hako_accounts(), "Vui lòng nhập Session ID cần xoá."
-    sid = sid.strip()
-    if sid in session_store:
+
+def list_account_choices():
+    choices = []
+    for sid, data in session_store.items():
+        state = data.get("state")
+        label = state.user_label if state else "Chưa đăng nhập"
+        choices.append((f"{label} ({sid[:8]}...)", sid))
+    return choices
+
+
+async def delete_selected_accounts(selected_sids: List[str]):
+    if not selected_sids:
+        return list_hako_accounts(), gr.update(choices=list_account_choices(), value=[]), "Chưa chọn tài khoản nào."
+    deleted = 0
+    for sid in selected_sids:
+        if sid in session_store:
+            session = session_store[sid]
+            state = session.get("state")
+            if state:
+                manager = HakoSessionManager(state)
+                await manager.close()
+            del session_store[sid]
+            deleted += 1
+    return list_hako_accounts(), gr.update(choices=list_account_choices(), value=[]), f"Đã xoá {deleted} tài khoản."
+
+
+async def delete_all_accounts():
+    count = len(session_store)
+    for sid in list(session_store.keys()):
         session = session_store[sid]
         state = session.get("state")
         if state:
             manager = HakoSessionManager(state)
             await manager.close()
         del session_store[sid]
-        return list_hako_accounts(), f"Đã xoá tài khoản (Session ID: {sid})"
-    return list_hako_accounts(), "Không tìm thấy Session ID."
+    return list_hako_accounts(), gr.update(choices=list_account_choices(), value=[]), f"Đã xoá tất cả {count} tài khoản."
 
 def list_downloaded_novels():
     items = []
@@ -373,6 +396,39 @@ def list_downloaded_novels():
                     items.append([novel_dir.name, f"{size_kb} KB", link])
     return items
 
+
+def list_file_choices():
+    choices = []
+    for user_dir in DOWNLOAD_DIR.iterdir():
+        if user_dir.is_dir():
+            for novel_dir in user_dir.iterdir():
+                if novel_dir.is_dir():
+                    for file_path in novel_dir.rglob('*'):
+                        if file_path.is_file():
+                            rel_path = file_path.relative_to(DOWNLOAD_DIR).as_posix()
+                            size_kb = file_path.stat().st_size // 1024
+                            choices.append((f"{novel_dir.name}/{file_path.name} ({size_kb} KB)", rel_path))
+                elif novel_dir.is_file():
+                    rel_path = novel_dir.relative_to(DOWNLOAD_DIR).as_posix()
+                    size_kb = novel_dir.stat().st_size // 1024
+                    choices.append((f"{novel_dir.name} ({size_kb} KB)", rel_path))
+    return choices
+
+
+def delete_selected_files(selected_paths: List[str]):
+    if not selected_paths:
+        return list_downloaded_novels(), gr.update(choices=list_file_choices(), value=[]), get_server_stats(), "Chưa chọn file nào."
+    deleted = 0
+    for rel_path in selected_paths:
+        full_path = DOWNLOAD_DIR / rel_path
+        if full_path.is_file():
+            full_path.unlink()
+            deleted += 1
+            parent = full_path.parent
+            if parent != DOWNLOAD_DIR and not any(parent.iterdir()):
+                parent.rmdir()
+    return list_downloaded_novels(), gr.update(choices=list_file_choices(), value=[]), get_server_stats(), f"Đã xoá {deleted} file."
+
 def delete_all_novels():
     try:
         for item in DOWNLOAD_DIR.iterdir():
@@ -381,19 +437,19 @@ def delete_all_novels():
             else:
                 item.unlink()
         DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        return list_downloaded_novels(), get_server_stats(), "Đã xoá toàn bộ truyện."
+        return list_downloaded_novels(), gr.update(choices=list_file_choices(), value=[]), get_server_stats(), "Đã xoá toàn bộ truyện."
     except Exception as e:
-        return list_downloaded_novels(), get_server_stats(), f"Lỗi: {e}"
+        return list_downloaded_novels(), gr.update(choices=list_file_choices(), value=[]), get_server_stats(), f"Lỗi: {e}"
 
 def build_admin_ui():
     with gr.Blocks(title="Admin Dashboard", theme=gr.themes.Soft()) as admin_demo:
         gr.Markdown("# Bảng điều khiển quản trị (Admin Dashboard)")
-        
+
         with gr.Row():
             with gr.Column():
                 stats_md = gr.Markdown(get_server_stats())
                 refresh_btn = gr.Button("Làm mới trạng thái")
-                
+
         with gr.Row():
             with gr.Column():
                 gr.Markdown("## Quản lý tài khoản Hako đã đăng nhập")
@@ -402,10 +458,15 @@ def build_admin_ui():
                     value=list_hako_accounts(),
                     interactive=False
                 )
-                session_id_input = gr.Textbox(label="Session ID cần xoá")
-                delete_acc_btn = gr.Button("Xoá tài khoản", variant="stop")
+                account_select = gr.CheckboxGroup(
+                    label="Chọn tài khoản để xoá",
+                    choices=list_account_choices(),
+                )
+                with gr.Row():
+                    delete_selected_acc_btn = gr.Button("Xoá tài khoản đã chọn", variant="stop")
+                    delete_all_acc_btn = gr.Button("Xoá tất cả tài khoản", variant="stop")
                 acc_msg = gr.Textbox(label="Thông báo", interactive=False)
-                
+
             with gr.Column():
                 gr.Markdown("## Quản lý truyện đã tải")
                 novels_df = gr.Dataframe(
@@ -414,19 +475,43 @@ def build_admin_ui():
                     value=list_downloaded_novels(),
                     interactive=False
                 )
-                gr.Markdown("*Ghi chú: Nhấn vào chữ `Tải file` để tải trực tiếp từ trình duyệt.*")
-                delete_all_btn = gr.Button("Xoá TẤT CẢ truyện", variant="stop")
+                file_select = gr.CheckboxGroup(
+                    label="Chọn file để xoá",
+                    choices=list_file_choices(),
+                )
+                with gr.Row():
+                    delete_selected_files_btn = gr.Button("Xoá file đã chọn", variant="stop")
+                    delete_all_btn = gr.Button("Xoá TẤT CẢ truyện", variant="stop")
                 novel_msg = gr.Textbox(label="Thông báo", interactive=False)
-                
+
         refresh_btn.click(get_server_stats, outputs=[stats_md])
         refresh_btn.click(list_hako_accounts, outputs=[accounts_df])
+        refresh_btn.click(list_account_choices, outputs=[account_select])
         refresh_btn.click(list_downloaded_novels, outputs=[novels_df])
-        
-        delete_acc_btn.click(delete_hako_account, inputs=[session_id_input], outputs=[accounts_df, acc_msg])
-        delete_acc_btn.click(get_server_stats, outputs=[stats_md])
-        
-        delete_all_btn.click(delete_all_novels, outputs=[novels_df, stats_md, novel_msg])
-        
+        refresh_btn.click(list_file_choices, outputs=[file_select])
+
+        delete_selected_acc_btn.click(
+            delete_selected_accounts, inputs=[account_select],
+            outputs=[accounts_df, account_select, acc_msg]
+        )
+        delete_selected_acc_btn.click(get_server_stats, outputs=[stats_md])
+
+        delete_all_acc_btn.click(
+            delete_all_accounts,
+            outputs=[accounts_df, account_select, acc_msg]
+        )
+        delete_all_acc_btn.click(get_server_stats, outputs=[stats_md])
+
+        delete_selected_files_btn.click(
+            delete_selected_files, inputs=[file_select],
+            outputs=[novels_df, file_select, stats_md, novel_msg]
+        )
+
+        delete_all_btn.click(
+            delete_all_novels,
+            outputs=[novels_df, file_select, stats_md, novel_msg]
+        )
+
     return admin_demo
 
 demo = build_ui()

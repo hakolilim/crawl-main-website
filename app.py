@@ -492,8 +492,8 @@ def build_admin_ui():
             
             with gr.Column(scale=1):
                 gr.Markdown("### Cấu hình máy chủ")
-                max_sessions_input = gr.Number(label="Max Sessions (Số người dùng)", value=APP_CONFIG["MAX_SESSIONS"], precision=0)
-                max_jobs_input = gr.Number(label="Max Concurrent Jobs (Luồng tải)", value=APP_CONFIG["MAX_CONCURRENT_JOBS"], precision=0)
+                max_sessions_input = gr.Number(label="Max Sessions (Số người dùng)", value=lambda: APP_CONFIG["MAX_SESSIONS"], precision=0)
+                max_jobs_input = gr.Number(label="Max Concurrent Jobs (Luồng tải)", value=lambda: APP_CONFIG["MAX_CONCURRENT_JOBS"], precision=0)
                 save_config_btn = gr.Button("Lưu cấu hình", variant="primary")
                 config_msg = gr.Textbox(label="Thông báo", interactive=False)
 

@@ -12,3 +12,5 @@ downloads/
 
 .DS_Store
 Thumbs.db
+nohup.out
+*.log

@@ -31,7 +31,11 @@ BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 FAVICON_PATH = PUBLIC_DIR / "favicon.ico"
-MAX_CONCURRENT_JOBS = 10
+
+APP_CONFIG = {
+    "MAX_CONCURRENT_JOBS": 10,
+    "MAX_SESSIONS": 20,
+}
 
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -40,11 +44,39 @@ app.mount("/public", StaticFiles(directory=str(PUBLIC_DIR)), name="public")
 app.mount("/downloads", StaticFiles(directory=str(DOWNLOAD_DIR)), name="downloads")
 
 session_store: Dict[str, Dict] = {}
-download_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
+
+class ConcurrencyManager:
+    def __init__(self):
+        self.active_jobs = 0
+        self.cond = asyncio.Condition()
+
+    async def acquire(self):
+        async with self.cond:
+            await self.cond.wait_for(lambda: self.active_jobs < APP_CONFIG["MAX_CONCURRENT_JOBS"])
+            self.active_jobs += 1
+
+    async def release(self):
+        async with self.cond:
+            self.active_jobs -= 1
+            self.cond.notify()
+
+download_manager = ConcurrencyManager()
 
 
-def ensure_user_session(session_id: str) -> Dict:
+async def ensure_user_session(session_id: str) -> Dict:
     if session_id not in session_store:
+        if len(session_store) >= APP_CONFIG["MAX_SESSIONS"]:
+            oldest_sid = next(iter(session_store))
+            oldest_session = session_store[oldest_sid]
+            if oldest_session.get("is_downloading", False):
+                raise HakoError("Máy chủ đang đầy, vui lòng thử lại sau.")
+            else:
+                state = oldest_session.get("state")
+                if state:
+                    manager = HakoSessionManager(state)
+                    await manager.close()
+                del session_store[oldest_sid]
+
         user_dir = DOWNLOAD_DIR / session_id
         user_dir.mkdir(parents=True, exist_ok=True)
         session_store[session_id] = {
@@ -53,6 +85,7 @@ def ensure_user_session(session_id: str) -> Dict:
             "volumes": [],
             "status": "Chưa đăng nhập.",
             "output_dir": str(user_dir),
+            "is_downloading": False,
         }
     return session_store[session_id]
 
@@ -168,8 +201,10 @@ async def download_selected(
         progress(min(chapter_progress["completed"] / total_chapters, 0.98), desc=message)
 
     try:
+        session["is_downloading"] = True
         progress(0, desc="Chuẩn bị tải truyện...")
-        async with download_semaphore:
+        await download_manager.acquire()
+        try:
             output_dir = reset_output_dir(session["output_dir"])
             files = await download_volumes(
                 novel_data=novel_data,
@@ -179,6 +214,9 @@ async def download_selected(
                 storage_state=storage_state,
                 progress_cb=progress_cb,
             )
+        finally:
+            await download_manager.release()
+            
         progress(1.0, desc="Hoàn tất tải truyện.")
         return files, "\n".join(logs + ["Hoàn tất tải truyện."])
     except HakoError as exc:
@@ -187,6 +225,8 @@ async def download_selected(
     except Exception as exc:
         progress(1.0, desc="Tải truyện thất bại.")
         return [], f"Lỗi hệ thống: {exc}"
+    finally:
+        session["is_downloading"] = False
 
 
 def build_ui():
@@ -306,7 +346,7 @@ async def favicon():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "max_concurrent_jobs": MAX_CONCURRENT_JOBS}
+    return {"status": "ok", "max_concurrent_jobs": APP_CONFIG["MAX_CONCURRENT_JOBS"]}
 
 
 def get_server_stats():
@@ -446,9 +486,23 @@ def build_admin_ui():
         gr.Markdown("# Bảng điều khiển quản trị (Admin Dashboard)")
 
         with gr.Row():
-            with gr.Column():
+            with gr.Column(scale=2):
                 stats_md = gr.Markdown(get_server_stats())
                 refresh_btn = gr.Button("Làm mới trạng thái")
+            
+            with gr.Column(scale=1):
+                gr.Markdown("### Cấu hình máy chủ")
+                max_sessions_input = gr.Number(label="Max Sessions (Số người dùng)", value=APP_CONFIG["MAX_SESSIONS"], precision=0)
+                max_jobs_input = gr.Number(label="Max Concurrent Jobs (Luồng tải)", value=APP_CONFIG["MAX_CONCURRENT_JOBS"], precision=0)
+                save_config_btn = gr.Button("Lưu cấu hình", variant="primary")
+                config_msg = gr.Textbox(label="Thông báo", interactive=False)
+
+        def save_config(max_sessions, max_jobs):
+            APP_CONFIG["MAX_SESSIONS"] = int(max_sessions)
+            APP_CONFIG["MAX_CONCURRENT_JOBS"] = int(max_jobs)
+            return "Đã lưu cấu hình."
+
+        save_config_btn.click(save_config, inputs=[max_sessions_input, max_jobs_input], outputs=[config_msg])
 
         with gr.Row():
             with gr.Column():

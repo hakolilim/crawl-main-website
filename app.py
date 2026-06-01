@@ -112,7 +112,7 @@ def render_summary(novel_data: Dict) -> str:
 
 
 async def do_login(session_id: str, username: str, password: str):
-    session = ensure_user_session(session_id)
+    session = await ensure_user_session(session_id)
     manager = HakoSessionManager(session["state"])
     if not username or not password:
         return "Vui lòng nhập tài khoản và mật khẩu Hako.", session["status"]
@@ -129,7 +129,7 @@ async def do_login(session_id: str, username: str, password: str):
 
 
 async def fetch_novel(session_id: str, url: str):
-    session = ensure_user_session(session_id)
+    session = await ensure_user_session(session_id)
     state = session["state"]
     storage_state = None
     if state.logged_in:
@@ -161,7 +161,7 @@ async def download_selected(
     export_formats: List[str],
     progress=gr.Progress(),
 ):
-    session = ensure_user_session(session_id)
+    session = await ensure_user_session(session_id)
     novel_data = session.get("novel_data")
     if not novel_data:
         return [], "Hãy lấy thông tin truyện trước khi tải."

@@ -252,7 +252,7 @@ def build_ui():
     """
 
     with gr.Blocks(title=APP_TITLE, css=css, theme=gr.themes.Soft(), head=head) as demo:
-        session_id = gr.State(str(uuid.uuid4()))
+        session_id = gr.State(lambda: str(uuid.uuid4()))
 
         gr.HTML(
             """

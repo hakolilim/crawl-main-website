@@ -95,7 +95,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 BROWSERLESS_TOKEN=...
 BROWSERLESS_WS_ENDPOINT=wss://chrome.browserless.io
+# seconds, not milliseconds
+BROWSERLESS_TIMEOUT=60
 ADMIN_EMAILS=you@email.com
+
 ```
 
 ### 4. Chạy local

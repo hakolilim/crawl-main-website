@@ -19,40 +19,35 @@ export class AuthenticationError extends HakoError {
  * Browserless expects `timeout` in **seconds** (1–60000), not milliseconds.
  * @see error: "Timeout must be an integer between 1 and 60,000 seconds"
  */
+// Sửa lại hàm resolveTimeoutSeconds để an toàn hơn
 function resolveTimeoutSeconds(): string {
   const raw = process.env.BROWSERLESS_TIMEOUT || "60";
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 1) return "60";
-  // Cap to Browserless max; also reject mistaken ms values (e.g. 120000)
-  if (n > 60000) return "60";
-  // If someone still puts ms-like values under 60000 but over a reasonable session
-  // (e.g. 120000 was invalid; 30000 ms would be 30000s ~ 8h — allow as seconds per API)
+  
+  // Nếu sai số hoặc truyền nhầm dạng mili-giây (ví dụ > 60000 hoặc > 300) 
+  // thì nên đưa về giá trị an toàn (ví dụ gói free/hobby thường giới hạn từ 1-300 giây)
+  if (!Number.isFinite(n) || n < 1 || n > 300) { 
+    return "60"; 
+  }
   return String(n);
 }
 
-function getWsEndpoint(kind: "playwright" | "cdp"): string {
+function getWsEndpoint(): string {
   const token = process.env.BROWSERLESS_TOKEN;
-  const base =
-    process.env.BROWSERLESS_WS_ENDPOINT || "wss://chrome.browserless.io";
+  const base = process.env.BROWSERLESS_WS_ENDPOINT || "wss://chrome.browserless.io";
+  
   if (!token) {
     throw new HakoError("Thiếu BROWSERLESS_TOKEN trên server.");
   }
 
   const url = new URL(base);
 
-  // Ensure path for Playwright protocol when using chromium.connect()
-  if (kind === "playwright") {
-    const path = url.pathname.replace(/\/$/, "") || "";
-    if (!path.includes("playwright")) {
-      // e.g. wss://chrome.browserless.io  →  /playwright
-      // e.g. wss://production-sfo.browserless.io/chrome → /chrome/playwright
-      url.pathname = path ? `${path}/playwright` : "/playwright";
-    }
-  }
-
+  // BỎ HOÀN TOÀN đoạn tự động thêm '/playwright' 
+  // Browserless sử dụng chung một endpoint gốc cho cả Playwright và CDP
+  
   url.searchParams.set("token", token);
 
-  // Browserless: timeout is in seconds (not ms)
+  // Thêm tham số timeout tính bằng giây
   const timeoutSec = resolveTimeoutSeconds();
   url.searchParams.set("timeout", timeoutSec);
 
@@ -60,19 +55,16 @@ function getWsEndpoint(kind: "playwright" | "cdp"): string {
 }
 
 export async function connectBrowser(): Promise<Browser> {
-  // Prefer Playwright websocket endpoint, then CDP fallback
-  const playwrightEndpoint = getWsEndpoint("playwright");
+  const endpoint = getWsEndpoint();
   try {
-    return await chromium.connect(playwrightEndpoint);
+    // Thử kết nối bằng phương thức gốc của Playwright trước
+    return await chromium.connect(endpoint);
   } catch (playwrightErr) {
-    const cdpEndpoint = getWsEndpoint("cdp");
     try {
-      return await chromium.connectOverCDP(cdpEndpoint);
+      // Nếu thất bại, fallback sang kết nối qua giao thức CDP
+      return await chromium.connectOverCDP(endpoint);
     } catch (cdpErr) {
-      const pMsg =
-        playwrightErr instanceof Error
-          ? playwrightErr.message
-          : String(playwrightErr);
+      const pMsg = playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr);
       const cMsg = cdpErr instanceof Error ? cdpErr.message : String(cdpErr);
       throw new HakoError(
         `Không kết nối được Browserless.\nPlaywright: ${pMsg}\nCDP: ${cMsg}`,

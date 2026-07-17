@@ -6,7 +6,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Hako Downloader agent notes
 
-- Architecture: **client orchestrator** + **Vercel API gateway** (Browserless secrets server-side only).
+- Architecture: **client orchestrator** + **API gateway** with **local Playwright** (`chromium.launch`).
 - Python/Gradio source kept under `legacy/`.
-- Never expose `BROWSERLESS_TOKEN` or `SUPABASE_SERVICE_ROLE_KEY` to the client.
+- Never expose `SUPABASE_SERVICE_ROLE_KEY` to the client.
 - Crawl routes must use `export const runtime = "nodejs"`.
+- Install browser binaries once: `npx playwright install chromium` (or `npm run playwright:install`).
+- Intended for **local / self-host** Node — Vercel serverless is not a supported crawl target.

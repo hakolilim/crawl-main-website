@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { AuthenticationError, HakoError } from "@/lib/hako/browserless";
+import { AuthenticationError, HakoError } from "@/lib/hako/browser";
 import { loginHako } from "@/lib/hako/session";
 
 export const runtime = "nodejs";
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     if (err instanceof HakoError) {
-      // Infra / Browserless / crawl transport errors
+      // Infra / Playwright / crawl transport errors
       return NextResponse.json({ error: err.message }, { status: 502 });
     }
     const message = err instanceof Error ? err.message : "Lỗi đăng nhập";

@@ -2,30 +2,32 @@
 
 Ứng dụng web tải light novel từ [Hako/Docln](https://docln.sbs), xuất **TXT / DOCX / EPUB** và đóng gói ZIP.
 
-Stack mới:
+Stack:
 
 - **Frontend / App**: Next.js (App Router) + React
 - **Auth & DB & Storage**: Supabase
-- **Crawl browser**: [browserless.io](https://www.browserless.io/) (Playwright remote)
-- **Deploy**: Vercel
+- **Crawl browser**: [Playwright](https://playwright.dev/) local (`chromium.launch`)
+- **Chạy**: local / self-host Node (không dùng Browserless)
 
 ## Kiến trúc
 
-**Client orchestrator + Vercel API gateway**
+**Client orchestrator + API gateway**
 
 | Việc | Nơi chạy |
 |---|---|
 | Điều phối job, progress, export file, upload Storage | **Browser (client)** |
-| Login Hako / fetch novel / fetch 1 chapter (Playwright) | **Vercel API** (giữ `BROWSERLESS_TOKEN`) |
+| Login Hako / fetch novel / fetch 1 chapter (Playwright) | **Node API** (local Chromium) |
 | Auth, metadata, RLS, Storage signed URL | **Supabase** |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Server only** |
 
-Client **không** nhận Browserless token và **không** nhận full Hako `storage_state` (cookies lưu trên `profiles` qua service role).
+Client **không** nhận full Hako `storage_state` (cookies lưu trên `profiles` qua service role).
+
+> **Lưu ý deploy:** Crawl cần Chromium local nên phù hợp **máy dev / VPS / Docker self-host**. Vercel serverless **không** được hỗ trợ cho crawl sau khi bỏ Browserless.
 
 ## Tính năng
 
 - Đăng ký / đăng nhập app (Supabase Auth)
-- Đăng nhập tài khoản Hako qua Browserless
+- Đăng nhập tài khoản Hako qua Playwright
 - Lấy danh sách tập, chọn tập + định dạng xuất
 - Tải từng chương (API ngắn), export TXT/DOCX/EPUB + ZIP trên client
 - Lịch sử truyện / jobs / files
@@ -46,17 +48,16 @@ Client **không** nhận Browserless token và **không** nhận full Hako `stor
 6. Gán admin: sau khi user đăng ký, trong Table Editor `profiles` set `role = 'admin'`,  
    hoặc điền email vào `ADMIN_EMAILS` trước khi user được bootstrap
 
-### 2. Browserless
+### 2. Playwright (Chromium)
 
-1. Đăng ký https://www.browserless.io/  
-2. Lấy API token  
-3. Endpoint **base** (không cần path):  
-   - Khuyến nghị: `wss://production-sfo.browserless.io`  
-   - Region khác: xem dashboard (lon/ams/…)  
-4. Code tự nối path Playwright: `/chromium/playwright`  
-   - **Không** dùng legacy `wss://chrome.browserless.io` (404/408)  
-   - **Không** set tay `/chrome/playwright`
+```bash
+npm install
+npx playwright install chromium
+# hoặc
+npm run playwright:install
+```
 
+Binary được tải vào cache user (Windows: `%USERPROFILE%\AppData\Local\ms-playwright`).
 
 ### 3. Env
 
@@ -70,37 +71,27 @@ cp .env.example .env.local
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-BROWSERLESS_TOKEN=...
-BROWSERLESS_WS_ENDPOINT=wss://production-sfo.browserless.io
 ADMIN_EMAILS=you@email.com
 
-
+# Optional — show browser while debugging login/crawl
+# PLAYWRIGHT_HEADLESS=false
 ```
+
+Không còn `BROWSERLESS_TOKEN` / `BROWSERLESS_WS_ENDPOINT`.
 
 ### 4. Chạy local
 
 ```bash
 npm install
+npx playwright install chromium
 npm run dev
 ```
 
 Mở http://localhost:3000
 
-### 5. Deploy Vercel
-
-1. Import repo  
-2. Thêm cùng env vars (Production + Preview)  
-3. Deploy  
-
 Route crawl đã set `maxDuration = 60` và `runtime = nodejs`.
 
-`next.config.ts` đã cấu hình:
-
-- `serverExternalPackages: ["playwright-core"]` — không bundle Playwright vào serverless chunk  
-- `outputFileTracingIncludes` cho các route `/api/hako/*` — đảm bảo `browsers.json` (và package assets) có trong deployment  
-
-Nếu thiếu phần này, login Hako trên Vercel có thể lỗi `Cannot find module '.../playwright-core/browsers.json'` dù local chạy bình thường.
-
+`next.config.ts` dùng `serverExternalPackages: ["playwright"]` để không bundle Playwright vào app chunk.
 
 ## Sử dụng
 
@@ -116,6 +107,7 @@ Nếu thiếu phần này, login Hako trên Vercel có thể lỗi `Cannot find 
 app/                 # pages + API routes
 components/          # UI
 lib/hako/            # crawl (server) + export (client) + orchestrator
+  browser.ts         # chromium.launch + withBrowserContext
 lib/supabase/        # clients
 supabase/migrations/ # SQL schema
 legacy/              # bản Python/Gradio cũ
@@ -124,8 +116,8 @@ legacy/              # bản Python/Gradio cũ
 ## Lưu ý
 
 - Đóng tab khi đang tải sẽ dừng job (client-orchestrated).  
-- Mỗi chapter = 1 request Browserless → tốn quota.  
-- Anti-bot / captcha docln có thể làm login fail — kiểm tra token Browserless và credentials.  
+- Mỗi chapter = 1 lần `chromium.launch` (session ngắn, an toàn tài nguyên).  
+- Anti-bot / captcha docln có thể làm login fail — thử `PLAYWRIGHT_HEADLESS=false` để debug.  
 - Code Python cũ nằm trong `legacy/` để tham chiếu.
 
 ## Health

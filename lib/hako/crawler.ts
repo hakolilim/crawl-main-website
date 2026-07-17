@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { withBrowserContext, HakoError } from "@/lib/hako/browserless";
+import { withBrowserContext, HakoError } from "@/lib/hako/browser";
 import {
   guessContentType,
   resolveUrl,

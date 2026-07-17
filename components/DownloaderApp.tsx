@@ -152,8 +152,8 @@ export function DownloaderApp({
             DOCX / EPUB.
           </p>
           <p className="muted" style={{ margin: "6px 0 0" }}>
-            Client điều phối tải từng chương; Vercel API giữ secrets
-            (Browserless + Supabase service role).
+            Client điều phối tải từng chương; API server chạy Playwright local
+            (Chromium) và giữ Supabase service role.
           </p>
         </div>
       </div>

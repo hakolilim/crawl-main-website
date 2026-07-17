@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { HakoError } from "@/lib/hako/browserless";
+import { HakoError } from "@/lib/hako/browser";
 import { fetchChapterContent } from "@/lib/hako/crawler";
 import type { PlaywrightStorageState } from "@/lib/types";
 

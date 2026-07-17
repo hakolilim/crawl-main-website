@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import {
   AuthenticationError,
   withBrowserContext,
-} from "@/lib/hako/browserless";
+} from "@/lib/hako/browser";
 import { LOGIN_URL } from "@/lib/hako/utils";
 import type { PlaywrightStorageState } from "@/lib/types";
 

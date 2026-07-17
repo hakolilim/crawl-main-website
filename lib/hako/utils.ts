@@ -57,6 +57,42 @@ export function formatFilename(name: string): string {
   return result || "untitled";
 }
 
+/**
+ * Storage object keys must be URL-safe. Supabase rejects many Unicode
+ * filenames with "Invalid key" (e.g. Vietnamese titles with spaces).
+ * Keep a readable ASCII slug + original extension.
+ */
+export function storageSafeFilename(name: string, fallback = "file"): string {
+  const trimmed = (name || "").trim();
+  const lastDot = trimmed.lastIndexOf(".");
+  const ext =
+    lastDot > 0 && lastDot < trimmed.length - 1
+      ? trimmed
+          .slice(lastDot + 1)
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "")
+          .slice(0, 12)
+      : "";
+  const base = lastDot > 0 ? trimmed.slice(0, lastDot) : trimmed;
+
+  // NFD then strip combining marks → approximate ASCII for Vietnamese
+  let ascii = base
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+
+  ascii = ascii
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 120);
+
+  if (!ascii) ascii = fallback;
+  return ext ? `${ascii}.${ext}` : ascii;
+}
+
+
 export function summaryToText(summaryHtml: string): string {
   const $ = cheerio.load(summaryHtml || "");
   const text = $.text().replace(/\s+\n/g, "\n").trim();

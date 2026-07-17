@@ -4,7 +4,8 @@ import {
   exportVolumeTxt,
   packageDownloadsZip,
 } from "@/lib/hako/export";
-import { randomDelay, sleep } from "@/lib/hako/utils";
+import { randomDelay, sleep, storageSafeFilename } from "@/lib/hako/utils";
+
 import { createClient } from "@/lib/supabase/client";
 import type {
   ChapterPayload,
@@ -196,9 +197,13 @@ export async function runDownloadJob(options: {
     const uploadErrors: string[] = [];
 
     for (const file of createdFiles) {
-      // Keep path storage-safe (avoid odd unicode/path separators in rare cases)
-      const safeName = file.filename.replace(/[\\/]+/g, "-");
-      const storagePath = `${userId}/${jobId}/${safeName}`;
+      // Supabase Storage keys reject many Unicode filenames ("Invalid key").
+      // Keep display name (file.filename) for UI download; use ASCII path for Storage.
+      const objectKey = storageSafeFilename(
+        file.filename,
+        `${file.format || "file"}-${uploadedCount + 1}`,
+      );
+      const storagePath = `${userId}/${jobId}/${objectKey}`;
       const { error: uploadError } = await supabase.storage
         .from("downloads")
         .upload(storagePath, file.blob, {
@@ -210,11 +215,13 @@ export async function runDownloadJob(options: {
         const hint =
           /bucket not found/i.test(uploadError.message)
             ? " — Hãy tạo bucket private `downloads` (chạy supabase/migrations/002_storage_downloads.sql)."
-            : /row-level security|policy|permission|not authorized/i.test(
-                  uploadError.message,
-                )
-              ? " — Kiểm tra Storage policies cho bucket `downloads`."
-              : "";
+            : /invalid key/i.test(uploadError.message)
+              ? " — Tên file không hợp lệ cho Storage (đã cố sanitize ASCII)."
+              : /row-level security|policy|permission|not authorized/i.test(
+                    uploadError.message,
+                  )
+                ? " — Kiểm tra Storage policies cho bucket `downloads`."
+                : "";
         const msg = `Lỗi upload ${file.filename}: ${uploadError.message}${hint}`;
         uploadErrors.push(msg);
         await appendLog(msg);
@@ -228,7 +235,8 @@ export async function runDownloadJob(options: {
           job_id: jobId,
           user_id: userId,
           novel_id: novel.id || null,
-          filename: safeName,
+          // Human-readable name for history UI / downloads
+          filename: file.filename,
           format: file.format,
           storage_path: storagePath,
           size_bytes: file.blob.size,
@@ -237,7 +245,7 @@ export async function runDownloadJob(options: {
         .single();
 
       if (metaError) {
-        const msg = `Upload OK nhưng lưu metadata thất bại (${safeName}): ${metaError.message}`;
+        const msg = `Upload OK nhưng lưu metadata thất bại (${file.filename}): ${metaError.message}`;
         uploadErrors.push(msg);
         await appendLog(msg);
         continue;
@@ -245,8 +253,9 @@ export async function runDownloadJob(options: {
 
       if (meta?.id) file.id = meta.id;
       uploadedCount += 1;
-      await appendLog(`Đã lưu Supabase: ${safeName}`);
+      await appendLog(`Đã lưu Supabase: ${file.filename} → ${objectKey}`);
     }
+
 
     if (createdFiles.length > 0 && uploadedCount === 0) {
       const message =

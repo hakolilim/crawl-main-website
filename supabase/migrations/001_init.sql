@@ -217,14 +217,6 @@ drop policy if exists "config_write_admin" on public.app_config;
 create policy "config_write_admin" on public.app_config
 for all using (public.is_admin()) with check (public.is_admin());
 
--- Storage bucket (run in dashboard or via API)
--- insert into storage.buckets (id, name, public) values ('downloads', 'downloads', false)
--- on conflict do nothing;
+-- Storage bucket + policies: see 002_storage_downloads.sql (required for file history)
 
--- Storage policies example (path: {user_id}/...)
--- create policy "storage_read_own" on storage.objects for select
---   using (bucket_id = 'downloads' and (auth.uid()::text = (storage.foldername(name))[1] or public.is_admin()));
--- create policy "storage_insert_own" on storage.objects for insert
---   with check (bucket_id = 'downloads' and auth.uid()::text = (storage.foldername(name))[1]);
--- create policy "storage_delete_own" on storage.objects for delete
---   using (bucket_id = 'downloads' and (auth.uid()::text = (storage.foldername(name))[1] or public.is_admin()));
+

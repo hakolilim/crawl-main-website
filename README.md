@@ -36,43 +36,14 @@ Client **không** nhận Browserless token và **không** nhận full Hako `stor
 ### 1. Supabase
 
 1. Tạo project tại https://supabase.com  
-2. SQL Editor → chạy toàn bộ `supabase/migrations/001_init.sql`  
-3. Storage → tạo bucket **private** tên `downloads`  
-4. Storage policies (SQL Editor), ví dụ:
-
-```sql
-insert into storage.buckets (id, name, public)
-values ('downloads', 'downloads', false)
-on conflict (id) do nothing;
-
-create policy "storage_read_own" on storage.objects for select
-  using (
-    bucket_id = 'downloads'
-    and (auth.uid()::text = (storage.foldername(name))[1] or public.is_admin())
-  );
-
-create policy "storage_insert_own" on storage.objects for insert
-  with check (
-    bucket_id = 'downloads'
-    and auth.uid()::text = (storage.foldername(name))[1]
-  );
-
-create policy "storage_update_own" on storage.objects for update
-  using (
-    bucket_id = 'downloads'
-    and auth.uid()::text = (storage.foldername(name))[1]
-  );
-
-create policy "storage_delete_own" on storage.objects for delete
-  using (
-    bucket_id = 'downloads'
-    and (auth.uid()::text = (storage.foldername(name))[1] or public.is_admin())
-  );
-```
-
-5. Authentication → bật Email provider  
-6. (Tuỳ chọn) tắt “Confirm email” khi dev  
-7. Gán admin: sau khi user đăng ký, trong Table Editor `profiles` set `role = 'admin'`,  
+2. SQL Editor → chạy **bắt buộc** theo thứ tự:
+   - `supabase/migrations/001_init.sql` (tables + RLS)
+   - `supabase/migrations/002_storage_downloads.sql` (**bucket `downloads` + storage policies**)
+3. Xác nhận Dashboard → **Storage** có bucket private tên `downloads`  
+   - Nếu thiếu: lỗi upload sẽ là `Bucket not found` và file không vào Lịch sử  
+4. Authentication → bật Email provider  
+5. (Tuỳ chọn) tắt “Confirm email” khi dev  
+6. Gán admin: sau khi user đăng ký, trong Table Editor `profiles` set `role = 'admin'`,  
    hoặc điền email vào `ADMIN_EMAILS` trước khi user được bootstrap
 
 ### 2. Browserless

@@ -192,8 +192,13 @@ export async function runDownloadJob(options: {
     }
 
     // Upload to Supabase Storage + metadata
+    let uploadedCount = 0;
+    const uploadErrors: string[] = [];
+
     for (const file of createdFiles) {
-      const storagePath = `${userId}/${jobId}/${file.filename}`;
+      // Keep path storage-safe (avoid odd unicode/path separators in rare cases)
+      const safeName = file.filename.replace(/[\\/]+/g, "-");
+      const storagePath = `${userId}/${jobId}/${safeName}`;
       const { error: uploadError } = await supabase.storage
         .from("downloads")
         .upload(storagePath, file.blob, {
@@ -202,58 +207,115 @@ export async function runDownloadJob(options: {
         });
 
       if (uploadError) {
-        await appendLog(
-          `Cảnh báo upload ${file.filename}: ${uploadError.message}`,
-        );
+        const hint =
+          /bucket not found/i.test(uploadError.message)
+            ? " — Hãy tạo bucket private `downloads` (chạy supabase/migrations/002_storage_downloads.sql)."
+            : /row-level security|policy|permission|not authorized/i.test(
+                  uploadError.message,
+                )
+              ? " — Kiểm tra Storage policies cho bucket `downloads`."
+              : "";
+        const msg = `Lỗi upload ${file.filename}: ${uploadError.message}${hint}`;
+        uploadErrors.push(msg);
+        await appendLog(msg);
         continue;
       }
 
       file.storagePath = storagePath;
-      const { data: meta } = await supabase
+      const { data: meta, error: metaError } = await supabase
         .from("download_files")
         .insert({
           job_id: jobId,
           user_id: userId,
           novel_id: novel.id || null,
-          filename: file.filename,
+          filename: safeName,
           format: file.format,
           storage_path: storagePath,
           size_bytes: file.blob.size,
         })
         .select("id")
         .single();
+
+      if (metaError) {
+        const msg = `Upload OK nhưng lưu metadata thất bại (${safeName}): ${metaError.message}`;
+        uploadErrors.push(msg);
+        await appendLog(msg);
+        continue;
+      }
+
       if (meta?.id) file.id = meta.id;
+      uploadedCount += 1;
+      await appendLog(`Đã lưu Supabase: ${safeName}`);
     }
 
-    progress(1, "Hoàn tất tải truyện.");
-    await appendLog("Hoàn tất tải truyện.");
+    if (createdFiles.length > 0 && uploadedCount === 0) {
+      const message =
+        uploadErrors[0] ||
+        "Không lưu được file lên Supabase Storage (bucket `downloads`).";
+      progress(1, "Tải xong nhưng lưu Storage thất bại.");
+      await appendLog(
+        "Tất cả file upload thất bại. File vẫn tải được local trong tab này, nhưng Lịch sử/Supabase sẽ trống cho đến khi Storage được cấu hình.",
+      );
+      await supabase
+        .from("download_jobs")
+        .update({
+          status: "failed",
+          error: message,
+          progress: 1,
+          current_message: "Tải xong nhưng lưu Storage thất bại.",
+          finished_at: new Date().toISOString(),
+          logs,
+        })
+        .eq("id", jobId);
+      throw new Error(message);
+    }
+
+    const doneMsg =
+      uploadErrors.length > 0
+        ? `Hoàn tất tải truyện (lưu ${uploadedCount}/${createdFiles.length} file lên Supabase).`
+        : "Hoàn tất tải truyện.";
+    progress(1, doneMsg);
+    await appendLog(doneMsg);
+    if (uploadErrors.length > 0) {
+      await appendLog(
+        `Một số file không lưu được Storage (${uploadErrors.length}).`,
+      );
+    }
     await supabase
       .from("download_jobs")
       .update({
         status: "completed",
         progress: 1,
-        current_message: "Hoàn tất tải truyện.",
+        current_message: doneMsg,
         finished_at: new Date().toISOString(),
         logs,
+        error: uploadErrors.length ? uploadErrors.join(" | ") : null,
       })
       .eq("id", jobId);
 
     return createdFiles;
+
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await appendLog(`Lỗi: ${message}`);
+    // Avoid duplicating the same log line when we already logged + marked failed above
+    if (!logs.includes(message)) {
+      await appendLog(`Lỗi: ${message}`);
+    }
     await supabase
       .from("download_jobs")
       .update({
         status: "failed",
         error: message,
-        current_message: "Tải truyện thất bại.",
+        current_message: message.includes("Storage")
+          ? "Tải xong nhưng lưu Storage thất bại."
+          : "Tải truyện thất bại.",
         finished_at: new Date().toISOString(),
         logs,
       })
       .eq("id", jobId);
     throw err;
   }
+
 }
 
 // keep type import used

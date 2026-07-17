@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/hako/login/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/hako/fetch-novel/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/hako/fetch-chapter/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

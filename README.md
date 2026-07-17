@@ -94,6 +94,14 @@ Mở http://localhost:3000
 
 Route crawl đã set `maxDuration = 60` và `runtime = nodejs`.
 
+`next.config.ts` đã cấu hình:
+
+- `serverExternalPackages: ["playwright-core"]` — không bundle Playwright vào serverless chunk  
+- `outputFileTracingIncludes` cho các route `/api/hako/*` — đảm bảo `browsers.json` (và package assets) có trong deployment  
+
+Nếu thiếu phần này, login Hako trên Vercel có thể lỗi `Cannot find module '.../playwright-core/browsers.json'` dù local chạy bình thường.
+
+
 ## Sử dụng
 
 1. Đăng ký / đăng nhập app  

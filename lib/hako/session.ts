@@ -42,25 +42,42 @@ export async function loginHako(
 ): Promise<{ userLabel: string; storageState: PlaywrightStorageState }> {
   return withBrowserContext(null, async ({ context }) => {
     const page = await context.newPage();
-    await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.goto(LOGIN_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
     await page.waitForLoadState("networkidle").catch(() => undefined);
 
+    // docln.sbs form: #name / #password (type=text + type=password)
     const emailInput = page
       .locator(
-        'input[placeholder*="Email"], input[type="email"], input[type="text"]',
+        '#name, input[name="name"], input[autocomplete="username"], input[placeholder*="Email"], input[type="email"], input[type="text"]',
       )
       .first();
-    const passwordInput = page.locator('input[type="password"]').first();
+    const passwordInput = page
+      .locator('#password, input[name="password"], input[type="password"]')
+      .first();
     const submitButton = page
       .locator(
         'button[type="submit"], button:has-text("Đăng nhập"), button:has-text("Dang nhap")',
       )
       .first();
 
+    await emailInput.waitFor({ state: "visible", timeout: 20000 });
+    await passwordInput.waitFor({ state: "visible", timeout: 10000 });
+
     await emailInput.fill(username);
     await passwordInput.fill(password);
-    await submitButton.click();
-    await page.waitForTimeout(2500);
+    await Promise.all([
+      page
+        .waitForURL((url) => !url.pathname.toLowerCase().includes("login"), {
+          timeout: 30000,
+          waitUntil: "domcontentloaded",
+        })
+        .catch(() => undefined),
+      submitButton.click(),
+    ]);
+    await page.waitForTimeout(1500);
     await page.waitForLoadState("networkidle").catch(() => undefined);
 
     const currentUrl = page.url().toLowerCase();
@@ -68,7 +85,7 @@ export async function loginHako(
     if (currentUrl.includes("login")) {
       const $ = cheerio.load(content);
       const alert = $(
-        '.alert, .error, .validation-summary-errors, [class*="danger"]',
+        '.alert, .error, .validation-summary-errors, [class*="danger"], [role="alert"]',
       )
         .first()
         .text()
@@ -81,7 +98,8 @@ export async function loginHako(
     }
 
     const label = (await readUserLabel(page)) || username;
-    const storageState = (await context.storageState()) as PlaywrightStorageState;
+    const storageState =
+      (await context.storageState()) as PlaywrightStorageState;
     return { userLabel: label, storageState };
   });
 }

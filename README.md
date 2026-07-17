@@ -79,7 +79,13 @@ create policy "storage_delete_own" on storage.objects for delete
 
 1. Đăng ký https://www.browserless.io/  
 2. Lấy API token  
-3. Endpoint mặc định: `wss://chrome.browserless.io` (hoặc endpoint region của gói)
+3. Endpoint **base** (không cần path):  
+   - Khuyến nghị: `wss://production-sfo.browserless.io`  
+   - Region khác: xem dashboard (lon/ams/…)  
+4. Code tự nối path Playwright: `/chromium/playwright`  
+   - **Không** dùng legacy `wss://chrome.browserless.io` (404/408)  
+   - **Không** set tay `/chrome/playwright`
+
 
 ### 3. Env
 
@@ -94,10 +100,9 @@ NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 BROWSERLESS_TOKEN=...
-BROWSERLESS_WS_ENDPOINT=wss://chrome.browserless.io
-# seconds, not milliseconds
-BROWSERLESS_TIMEOUT=60
+BROWSERLESS_WS_ENDPOINT=wss://production-sfo.browserless.io
 ADMIN_EMAILS=you@email.com
+
 
 ```
 

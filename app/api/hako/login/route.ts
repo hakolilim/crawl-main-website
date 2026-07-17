@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     );
 
     const admin = createAdminClient();
-    await admin
+    const { error: updateError } = await admin
       .from("profiles")
       .update({
         hako_user_label: userLabel,
@@ -46,18 +46,29 @@ export async function POST(request: Request) {
       })
       .eq("id", user.id);
 
+    if (updateError) {
+      return NextResponse.json(
+        {
+          error: `Đăng nhập Hako thành công nhưng không lưu được session: ${updateError.message}`,
+        },
+        { status: 500 },
+      );
+    }
+
     return NextResponse.json({
       ok: true,
       userLabel,
       message: `Đã đăng nhập: ${userLabel}`,
     });
   } catch (err) {
-    const message =
-      err instanceof AuthenticationError || err instanceof HakoError
-        ? err.message
-        : err instanceof Error
-          ? err.message
-          : "Lỗi đăng nhập";
-    return NextResponse.json({ error: message }, { status: 400 });
+    if (err instanceof AuthenticationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    if (err instanceof HakoError) {
+      // Infra / Browserless / crawl transport errors
+      return NextResponse.json({ error: err.message }, { status: 502 });
+    }
+    const message = err instanceof Error ? err.message : "Lỗi đăng nhập";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

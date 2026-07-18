@@ -1,21 +1,26 @@
-# Sử dụng image chính thức của Playwright đã cài sẵn Node.js và mọi dependencies của Browser
-FROM mcr.microsoft.com/playwright:v1.49.0-noble
+# Playwright base image — version MUST match package-lock.json (playwright@1.61.1)
+FROM mcr.microsoft.com/playwright:v1.61.1-noble
 
 WORKDIR /app
 
-# Sao chép package.json và cài đặt dependencies
-COPY package*.json ./
-RUN npm install
+# Install dependencies from lockfile for reproducible builds
+COPY package.json package-lock.json ./
+RUN npm ci
 
-# Sao chép toàn bộ mã nguồn
+# Copy application source
 COPY . .
 
-# Build Next.js
+# Build Next.js (NEXT_PUBLIC_* env vars must be available at build time on Render)
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# Biến môi trường mặc định cho cổng
+# Runtime defaults for Render
+ENV NODE_ENV=production
 ENV PORT=10000
+ENV HOSTNAME=0.0.0.0
+ENV PLAYWRIGHT_HEADLESS=true
+
 EXPOSE 10000
 
-# Lệnh chạy ứng dụng
-CMD ["npm", "start"]
+# Bind 0.0.0.0 so Render can route traffic; respect $PORT
+CMD ["sh", "-c", "npx next start -H 0.0.0.0 -p ${PORT:-10000}"]
